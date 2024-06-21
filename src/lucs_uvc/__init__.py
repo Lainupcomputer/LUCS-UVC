@@ -1,52 +1,11 @@
-"""Module for version checking utility (UVC).
-
-This module provides a utility class, UVC (Version Checker), which is used for
-checking the version of a given application against a version server. It includes
-methods to fetch external versions from the server and compare them with the
-current version of the application.
-
-The module consists of the following components:
-- UVC class: A utility class for version checking.
-  - Methods:
-    - __init__: Initializes the UVC object with the version server URL, application
-                name, and current version.
-    - get_external_versions: Fetches external versions from the version server.
-    - check_version: Compares the current version with the external versions and
-                     provides feedback on the update status.
-
-Dependencies:
-- urllib: For making HTTP requests to fetch version information from the server.
-- re: For regular expression matching to validate version formats.
-- logging: For logging errors encountered during version checking.
-
-Usage:
-1. Initialize the UVC object with the version server URL, application name, and
-   current version.
-2. Call the check_version method to check the update status of the application.
-
-Example:
-    uvc = UVC('http://example.com/version_info', 'MyApp', '1.0.0.0')
-    update_status = uvc.check_version()
-    print(update_status)
-
-Note: Ensure that the version server provides version information in a compatible
-format that can be parsed by this utility.
-
-Author: Lainupcomputersolution
-Date: 2024
-"""
-
-__version__ = "0.1.0.0"
-__author__ = 'Sandro Kalett'
-__credits__ = 'Lainupcomputersolution'
-
-from urllib import request
+from urllib import request, error
 import re
 import logging
 
 
 class UVC:
     """Utility class for version checking."""
+
     def __init__(self, version_server: str, app_name: str, app_version: str):
         """Initialize the UVC object.
 
@@ -58,7 +17,9 @@ class UVC:
         self.version_server = version_server
         self.app_name = app_name
         self.app_version = app_version
-        self.version_names: dict = {0: "Main", 1: "Secondary", 2: "Patch", 3: "Fix"}
+        self.version_names = {0: "Main", 1: "Secondary", 2: "Patch", 3: "Fix"}
+        self.logger = logging.getLogger(__name__)
+        logging.basicConfig(level=logging.INFO)
 
     def get_external_versions(self) -> list:
         """Fetch external versions from the version server.
@@ -67,12 +28,16 @@ class UVC:
             list: A list containing version information.
         """
         try:
-            req = request.urlopen(self.version_server)
-            data = req.read().decode('UTF-8')
-            s = data.find(self.app_name + '_version==')
-            return data[s:s + 20].split("==")
-        except Exception as e:
-            print("Error fetching version information:", e)
+            with request.urlopen(self.version_server) as req:
+                data = req.read().decode('UTF-8')
+                match = re.search(f'{self.app_name}_version==([\d.]+)', data)
+                if match:
+                    return match.group(1).split('.')
+                else:
+                    self.logger.error("Version information not found in server response.")
+                    return []
+        except error.URLError as e:
+            self.logger.error("Error fetching version information: %s", e)
             return []
 
     def check_version(self) -> str:
@@ -85,11 +50,17 @@ class UVC:
             return "Invalid version format"
 
         data = self.get_external_versions()
-        d_ver_s = data[1].split(".")
+        if not data:
+            return "Failed to retrieve external versions."
+
+        d_ver_s = data
         v_ver_s = self.app_version.split(".")
-        success = True
-        success_l = False
-        success_msg: str = ""
+
+        if len(d_ver_s) != len(v_ver_s):
+            return "Version format mismatch between local and external versions."
+
+        success_msg = ""
+        update_needed = False
 
         for i in range(len(d_ver_s)):
             if d_ver_s[i] != v_ver_s[i]:
@@ -99,16 +70,10 @@ class UVC:
                 else:
                     success_msg += (f"({self.app_name}) {self.version_names[i]}: remote:{d_ver_s[i]} current:{v_ver_s[i]}"
                                     f", Update recommended.\n")
-                    success = False
-                    success_l = True
+                    update_needed = True
                     break
 
-        if success:
-            success_msg += f"({self.app_name}) up to date. ({self.app_version})"
-        else:
-            if not success_l:
-                success_msg += f"({self.app_name}) needs update to run properly. current: ({self.app_version}), remote: ({d_ver_s})"
+        if not update_needed:
+            success_msg = f"({self.app_name}) is up to date. ({self.app_version})"
+        self.logger.info(success_msg)
         return success_msg
-
-
-
