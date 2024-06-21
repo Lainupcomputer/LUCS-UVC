@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='uvc',
+    name='lucs-uvc',
     version='0.1.0.0',
     author='Sandro Kalett',
     author_email='sandrokalett@lainupcomputersolution.de',
